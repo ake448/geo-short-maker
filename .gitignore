@@ -1,0 +1,49 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Node
+node_modules/
+package-lock.json
+
+# Pipeline output (large generated files)
+runs/
+output/
+cache/
+top5/
+
+# Temp / debug artifacts
+_tmp_*/
+.branding_cache/
+earth_twin_frames/
+tts/
+debug_*.png
+test_branding_v2.png
+test_output.mp3
+tmp_bench.mp4
+test_api_out*.txt
+
+# Sample/example frames (regenerable)
+examples/
+
+# Claude Code sessions
+.claude/
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

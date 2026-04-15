@@ -1,0 +1,13 @@
+{
+  "name": "geography-tools",
+  "private": true,
+  "scripts": {
+    "earth:twin": "node serve_earth.js",
+    "earth:video": "node render_cesium.js",
+    "earth:visuals": "node render_digital_twin.js --help",
+    "earth:visuals:list": "node render_digital_twin.js --list-shots"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  }
+}

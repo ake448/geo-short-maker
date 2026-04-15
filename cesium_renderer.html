@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Cesium Cinematic Pro Renderer</title>
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.114/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            overflow: hidden;
+        }
+
+        #cesiumContainer {
+            width: 1080px;
+            height: 1920px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="cesiumContainer"></div>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const CESIUM_ION_TOKEN = params.get('cesium_ion_token') || '';
+        const GOOGLE_MAPS_API_KEY = params.get('google_maps_api_key') || '';
+        const MAPBOX_TOKEN = params.get('mapbox_token') || '';
+        const RENDER_MODE = (params.get('render_mode') || 'auto').toLowerCase();
+        Cesium.Ion.defaultAccessToken = CESIUM_ION_TOKEN;
+
+        // Software-rendering friendly: avoid Cesium worker boot issues on no-GPU hosts.
+        Cesium.FeatureDetection.supportsWebWorkers = function () { return false; };
+
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            sceneMode: Cesium.SceneMode.SCENE3D,
+            timeline: false, animation: false, baseLayerPicker: false,
+            navigationHelpButton: false, infoBox: false, homeButton: false,
+            geocoder: false, fullscreenButton: false, vrButton: false,
+            selectionIndicator: false,
+            baseLayer: false,
+            imageryProvider: false,
+            creditContainer: document.createElement('div'),
+            orderIndependentTranslucency: false,
+            contextOptions: { webgl: { preserveDrawingBuffer: true } }
+        });
+
+        const imageryLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+            url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+        }));
+
+        const darkMapLayer = MAPBOX_TOKEN ? viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+            url: `https://api.mapbox.com/styles/v1/mapbox/dark-v11/tiles/256/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`
+        })) : null;
+
+        const nightLightsLayer = viewer.imageryLayers.addImageryProvider(new Cesium.UrlTemplateImageryProvider({
+            url: 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/VIIRS_CityLights_2012/default/GoogleMapsCompatible_Level8/{z}/{y}/{x}.jpg',
+            tilingScheme: new Cesium.WebMercatorTilingScheme(),
+            maximumLevel: 8
+        }));
+
+        if (darkMapLayer) {
+            darkMapLayer.show = false;
+            darkMapLayer.alpha = 0;
+        }
+
+        nightLightsLayer.show = false;
+        nightLightsLayer.alpha = 0;
+
+        function getNightAlpha(height) {
+            if (height > 12000000) return 0.95;
+            if (height > 2000000) return 0.82;
+            if (height > 200000) return 0.68;
+            return 0.42;
+        }
+
+        function applyRenderMode(height) {
+            const nightMode = RENDER_MODE === 'night';
+            imageryLayer.alpha = nightMode ? (darkMapLayer ? 0.12 : 0.24) : 1;
+            imageryLayer.brightness = nightMode ? 0.24 : 1;
+            imageryLayer.contrast = nightMode ? 1.04 : 1;
+            imageryLayer.gamma = nightMode ? 0.92 : 1;
+            imageryLayer.saturation = nightMode ? 0.18 : 1;
+            imageryLayer.hue = 0;
+
+            if (darkMapLayer) {
+                darkMapLayer.show = nightMode;
+                darkMapLayer.alpha = nightMode ? 0.96 : 0;
+                darkMapLayer.brightness = 0.9;
+                darkMapLayer.saturation = 0.16;
+            }
+
+            nightLightsLayer.show = nightMode;
+            nightLightsLayer.alpha = nightMode ? getNightAlpha(height || viewer.camera.positionCartographic.height) : 0;
+            viewer.scene.skyAtmosphere.hueShift = 0;
+            viewer.scene.skyAtmosphere.saturationShift = nightMode ? -0.92 : 0;
+            viewer.scene.skyAtmosphere.brightnessShift = nightMode ? -0.58 : 0;
+            viewer.scene.globe.atmosphereBrightnessShift = nightMode ? -0.28 : 0;
+            viewer.scene.backgroundColor = nightMode ? Cesium.Color.fromCssColorString('#040404') : Cesium.Color.BLACK;
+            viewer.scene.globe.enableLighting = !nightMode;
+        }
+
+        function useFallbackImagery() {
+            try {
+                viewer.scene.primitives.removeAll();
+                console.log('Fallback imagery enabled (ESRI World Imagery)');
+                applyRenderMode();
+            } catch (e) {
+                console.error('Fallback imagery setup failed: ' + e);
+            }
+        }
+
+        // Cinematic Settings (Optimized for No-GPU / Software Rendering)
+        viewer.scene.globe.enableLighting = true;
+        viewer.scene.skyAtmosphere.show = true;
+        viewer.scene.fog.enabled = true;
+        viewer.scene.fog.density = 0.0001;
+
+        // Disable heavy post-processing for software rendering stability
+        viewer.scene.highDynamicRange = false;
+        viewer.scene.postProcessStages.fxaa.enabled = false;
+        applyRenderMode();
+
+        let mainTileset = null;
+        async function load3DTiles() {
+            if (!GOOGLE_MAPS_API_KEY) {
+                console.warn('GOOGLE_MAPS_API_KEY not provided. Falling back to ESRI imagery.');
+                useFallbackImagery();
+                return;
+            }
+            try {
+                mainTileset = await Cesium.createGooglePhotorealistic3DTileset(GOOGLE_MAPS_API_KEY);
+                viewer.scene.primitives.add(mainTileset);
+                console.log("Tileset loaded");
+            } catch (error) {
+                console.error(`Failed to load 3D Tiles: ${error}`);
+                useFallbackImagery();
+            }
+        }
+        load3DTiles();
+
+        window.setCamera = (lat, lon, height, heading, pitch, roll) => {
+            viewer.camera.setView({
+                destination: Cesium.Cartesian3.fromDegrees(lon, lat, height),
+                orientation: {
+                    heading: Cesium.Math.toRadians(heading || 0),
+                    pitch: Cesium.Math.toRadians(pitch || -90),
+                    roll: Cesium.Math.toRadians(roll || 0)
+                }
+            });
+            applyRenderMode(height);
+        };
+
+        window.checkIdle = () => {
+            // Check globe tiles
+            const globeDone = viewer.scene.globe.tilesLoaded;
+            // Check our specific photorealistic tileset if it exists
+            const tilesetDone = mainTileset ? mainTileset.allTilesLoaded : true;
+            return globeDone && tilesetDone;
+        };
+
+        // Initial setup at high altitude
+        window.setCamera(40.7128, -74.0060, 20000000, 0, -90, 0);
+    </script>
+</body>
+
+</html>
