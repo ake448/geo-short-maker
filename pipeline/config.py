@@ -60,7 +60,7 @@ OSM_URL   = "https://cartodb-basemaps-a.global.ssl.fastly.net/dark_all/{z}/{x}/{
 
 # Gemini
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL   = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash").strip() or "gemini-2.0-flash"
+GEMINI_MODEL   = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-preview").strip() or "gemini-3.1-flash-preview"
 
 # Background music
 MUSIC_DIR = Path(os.environ.get("GEO_MUSIC_DIR", "").strip() or str(ROOT / "music")).resolve()

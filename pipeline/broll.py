@@ -62,7 +62,7 @@ def _frames_to_mp4(frames_dir: Path, out_path: Path, fps: int = FPS, duration: f
             "unsharp=3:3:0.4:3:3:0,"
             "vignette=angle=0.22,format=yuv420p"
         ),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "22",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "22",
         "-r", str(fps), "-t", str(duration), "-an",
         str(out_path)
     ], timeout=180)
@@ -523,7 +523,7 @@ def gen_satellite_zoom(geo, out_path, duration=6.0):
     )
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", str(prescale),
-        "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "22",
         "-r", str(FPS), "-frames:v", str(total_n), str(out_path)], timeout=120)
     prescale.unlink(missing_ok=True)
     return ok
@@ -563,7 +563,7 @@ def gen_satellite_pan(geo, out_path, duration=5.0, direction="left_to_right"):
 
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", str(prescale),
-        "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "22",
         "-r", str(FPS), "-frames:v", str(total_n), str(out_path)], timeout=120)
     prescale.unlink(missing_ok=True)
     return ok
@@ -1188,7 +1188,7 @@ def gen_outline_reveal(geo, out_path, duration=4.0):
         f"[0]scale={OUT_W}:{OUT_H}[a];[1]scale={OUT_W}:{OUT_H}[b];"
         f"[a][b]blend=all_expr='{blend_expr}'",
         "-t", str(duration), "-r", str(FPS),
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         str(out_path)], timeout=120)
     plain_tmp.unlink(missing_ok=True)
     outlined_tmp.unlink(missing_ok=True)

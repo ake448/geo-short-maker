@@ -146,7 +146,8 @@ SOURCING INTENT RULES (CRITICAL):
     - crime/rough area → ["city name hood", "city name ghetto", "neighborhood name", "city name abandoned"]
     - construction/infrastructure → ["city name highway construction", "city name roadwork", "city name bridge construction timelapse"]
     - culture/food/entertainment → ["city name beltline walk", "city name downtown street walk", "city name neighborhood", "city name food market"]
-    - nature/terrain → ["region name drone aerial", "landmark name 4k", "state name nature wildlife"]
+    - nature/terrain → ["specific landmark drone aerial", "river/mountain name 4k", "state name nature wildlife"]
+    - specific neighborhood → ["neighborhood name city drone", "neighborhood name walk", "street name city drive"]
     - beach/coast → ["beach name drone", "city name beach aerial 4k"]
     - downtown/skyline → ["city name downtown drone", "city name skyline", "bridge name city name"]
     - specific landmark → use the actual landmark name + city + drone/aerial/footage
@@ -159,13 +160,16 @@ SOURCING INTENT RULES (CRITICAL):
   Include local names, nicknames, bridge names, neighborhood names, highway numbers.
   Keep queries 2-5 words. No filler words. Think like a local searching for footage.
   CRITICAL RULES:
+    - NO ABSTRACT CONCEPTS in `youtube_queries`. For example, do NOT search for 'beauty', 'fear', 'growth', 'economy', 'dangerous', 'vibrant'. These are not visual things. Search ONLY for concrete subjects: 'skyline', 'traffic', 'forest', 'factory', 'street walk', 'police car', 'hazy sky'.
+    - For cities, always include at least one query for a major local landmark (e.g. named bridge, park, or specific skyscraper).
     - Search for FOOTAGE that exists on YouTube, not concepts or explanations. BAD: "Radcliffe Line map", "border explained", "geographic borders resolved". GOOD: "Bangladesh drone 4k", "Kolkata aerial", "India border village".
     - At least 2 of your 6 queries must be BROAD geographic queries that are guaranteed to have footage: "COUNTRYNAME drone 4k", "MAJORCITY aerial cinematic", "REGIONNAME landscape 4k".
     - NEVER search for maps, animations, infographics, or explainer videos — we need raw footage only.
 - `search_intent.visual_description` must describe camera angle + subject + movement.
-- `search_intent.required_geography` must name the SPECIFIC location (neighborhood/landmark/feature).
+- `search_intent.required_geography` must name the SPECIFIC location (neighborhood/landmark/feature) — e.g. "Pine Hills, Orlando" not just "Florida".
 - `search_intent.geography_strictness` must be `strict` for exact-place beats, `loose` for regional/biome substitutes.
 - `search_intent.fallback_allowed` must be one of `terrain_map|3d_orbit`.
+- `search_intent.landmarks` — a short string listing 2-3 visible landmarks, streets, or features someone would see in footage from this exact location (e.g. "St. Johns River, Main Street Bridge, downtown skyline"). Used to verify footage accuracy.
 - `search_intent.biome_hint` should be biome/environment wording (not city names), e.g. "southeastern US pine forest".
 
 VISUAL VARIETY RULES:
@@ -222,6 +226,7 @@ Return STRICT JSON:
                 "required_geography": "string",
                 "geography_strictness": "strict|loose",
                 "fallback_allowed": "terrain_map|3d_orbit",
+                "landmarks": "string (2-3 visible features: 'St. Johns River, Main Street Bridge')",
                 "biome_hint": "string"
             }},
       "caption_text": "string (key phrase, ALL CAPS, 2-5 words — visual emphasis only)",
@@ -346,7 +351,8 @@ SOURCING INTENT RULES (CRITICAL):
     - crime/rough area → ["city name hood", "city name ghetto", "neighborhood name", "city name abandoned"]
     - construction/infrastructure → ["city name highway construction", "city name roadwork", "city name bridge construction timelapse"]
     - culture/food/entertainment → ["city name beltline walk", "city name downtown street walk", "city name neighborhood", "city name food market"]
-    - nature/terrain → ["region name drone aerial", "landmark name 4k", "state name nature wildlife"]
+    - nature/terrain → ["specific landmark drone aerial", "river/mountain name 4k", "state name nature wildlife"]
+    - specific neighborhood → ["neighborhood name city drone", "neighborhood name walk", "street name city drive"]
     - beach/coast → ["beach name drone", "city name beach aerial 4k"]
     - downtown/skyline → ["city name downtown drone", "city name skyline", "bridge name city name"]
     - specific landmark → use the actual landmark name + city + drone/aerial/footage
@@ -359,13 +365,16 @@ SOURCING INTENT RULES (CRITICAL):
   Include local names, nicknames, bridge names, neighborhood names, highway numbers.
   Keep queries 2-5 words. No filler words. Think like a local searching for footage.
   CRITICAL RULES:
+    - NO ABSTRACT CONCEPTS in `youtube_queries`. For example, do NOT search for 'beauty', 'fear', 'growth', 'economy', 'dangerous', 'vibrant'. These are not visual things. Search ONLY for concrete subjects: 'skyline', 'traffic', 'forest', 'factory', 'street walk', 'police car', 'hazy sky'.
+    - For cities, always include at least one query for a major local landmark (e.g. named bridge, park, or specific skyscraper).
     - Search for FOOTAGE that exists on YouTube, not concepts or explanations. BAD: "Radcliffe Line map", "border explained", "geographic borders resolved". GOOD: "Bangladesh drone 4k", "Kolkata aerial", "India border village".
     - At least 2 of your 6 queries must be BROAD geographic queries that are guaranteed to have footage: "COUNTRYNAME drone 4k", "MAJORCITY aerial cinematic", "REGIONNAME landscape 4k".
     - NEVER search for maps, animations, infographics, or explainer videos — we need raw footage only.
 - `search_intent.visual_description` must describe camera angle + subject + movement.
-- `search_intent.required_geography` must name the SPECIFIC location (neighborhood/landmark/feature).
+- `search_intent.required_geography` must name the SPECIFIC location (neighborhood/landmark/feature) — e.g. "Pine Hills, Orlando" not just "Florida".
 - `search_intent.geography_strictness` must be `strict` for exact-place beats, `loose` for regional/biome substitutes.
 - `search_intent.fallback_allowed` must be one of `terrain_map|3d_orbit`.
+- `search_intent.landmarks` — a short string listing 2-3 visible landmarks, streets, or features someone would see in footage from this exact location (e.g. "St. Johns River, Main Street Bridge, downtown skyline"). Used to verify footage accuracy.
 - `search_intent.biome_hint` should be biome/environment wording (not city names), e.g. "southeastern US pine forest".
 
 VISUAL VARIETY RULES:
@@ -422,6 +431,7 @@ Return STRICT JSON:
                 "required_geography": "string",
                 "geography_strictness": "strict|loose",
                 "fallback_allowed": "terrain_map|3d_orbit",
+                "landmarks": "string (2-3 visible features: 'St. Johns River, Main Street Bridge')",
                 "biome_hint": "string"
             }},
       "caption_text": "string (key phrase, ALL CAPS, 2-5 words)",
@@ -1404,11 +1414,13 @@ def normalize_script_plan(script: Dict[str, Any], visual_style: str = "mixed") -
             if fallback_allowed not in {"terrain_map", "3d_orbit"}:
                 fallback_allowed = "terrain_map"
             biome_hint = str(search_intent.get("biome_hint") or beat.get("visual_note") or beat.get("narration") or "").strip()
+            landmarks = str(search_intent.get("landmarks") or "").strip()
             beat["search_intent"] = {
                 "visual_description": visual_description,
                 "required_geography": required_geography,
                 "geography_strictness": geography_strictness,
                 "fallback_allowed": fallback_allowed,
+                "landmarks": landmarks,
                 "biome_hint": biome_hint,
             }
             beat.pop("youtube_url", None)
@@ -1554,11 +1566,13 @@ def normalize_script_plan(script: Dict[str, Any], visual_style: str = "mixed") -
             if fallback_allowed not in {"terrain_map", "3d_orbit"}:
                 fallback_allowed = "terrain_map"
             biome_hint = str(search_intent.get("biome_hint") or beat.get("visual_note") or beat.get("narration") or "").strip()
+            landmarks = str(search_intent.get("landmarks") or "").strip()
             beat["search_intent"] = {
                 "visual_description": visual_description,
                 "required_geography": required_geography,
                 "geography_strictness": geography_strictness,
                 "fallback_allowed": fallback_allowed,
+                "landmarks": landmarks,
                 "biome_hint": biome_hint,
             }
         elif "search_intent" in beat:
