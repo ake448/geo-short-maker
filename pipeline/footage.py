@@ -563,7 +563,7 @@ def _yt_download_exact(
         "ffmpeg", "-y", "-i", str(full_path),
         "-t", str(max(5.0, min(8.0, float(duration_sec)))),
         "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     
@@ -612,14 +612,27 @@ def _yt_search_candidates(
         "lyrics", "music video",
         "nba", "nfl", "mlb", "highlights reel",
     }
+    # Initial search in requested strictness
+    found = _process_yt_results(text, bad_terms, region_anchor, topic_hint, broll_type, extra_anchors, strictness)
+    
+    # Adaptive Fallback: If strict mode (default) found NOTHING, try again with medium
+    if not found and strictness == "strict":
+        print(f" (strict filter returned 0, attempting medium fallback)", end="", flush=True)
+        found = _process_yt_results(text, bad_terms, region_anchor, topic_hint, broll_type, extra_anchors, "medium")
+        
+    return found
+
+def _process_yt_results(text: str, bad_terms: set[str], region_anchor: str, topic_hint: str, 
+                        broll_type: str, extra_anchors: List[str], strictness: str) -> List[Dict[str, Any]]:
     # Require at least one positive visual term — anything without these is not b-roll footage
     _VISUAL_TERMS = {
         "drone", "aerial", "footage", "walk", "walking", "street", "drive",
         "driving", "flight", "timelapse", "time lapse", "cam", "camera",
         "downtown", "skyline", "nature", "wildlife", "4k", "hd", "cinematic",
-        "tour", "view", "neighborhood", "neighborhood", "hood", "district",
+        "tour", "view", "neighborhood", "hood", "district",
         "beach", "river", "lake", "forest", "mountain", "highway", "traffic",
         "nightlife", "night", "helicopter", "gopro", "dashcam", "pov",
+        "city", "metropolis", "capital", "urban", "scenery", "building", "architecture", "bridge",
     }
     
     # Extract geographic anchors from region context (not full query) to avoid over-constraining.
@@ -629,6 +642,7 @@ def _yt_search_candidates(
     geo_kw = set(_anchor_tokens(anchor_text))
     strict_mode = str(strictness or "strict").strip().lower()
     out: List[Dict[str, Any]] = []
+    
     for line in text.splitlines():
         parts = line.split("|||")
         if len(parts) < 5:
@@ -640,12 +654,9 @@ def _yt_search_candidates(
         if any(term in title_l for term in bad_terms):
             continue
         # Allowlist: require at least one positive visual term.
-        # If a title has NONE of these, it's not b-roll footage — it's a review/tutorial/podcast/etc.
         if not any(term in title_l for term in _VISUAL_TERMS):
             continue
-        # Geographic score bonus: geo match in title is a good signal but don't hard-reject —
-        # many legit drone/aerial channels omit the city name in the title. Gemini frame
-        # validation is the real geo gate downstream.
+        # Geographic score bonus
         geo_in_title = bool(geo_kw and any(kw in title_l for kw in geo_kw))
         if not _title_passes_relevance(
             title,
@@ -665,7 +676,7 @@ def _yt_search_candidates(
         if any(k in title_l for k in ("walk", "drone", "aerial", "street", "nature", "coast", "mountain")): score += 2.0
         if d >= 30: score += 1.0
         if v > 10000: score += 1.0
-        if geo_in_title: score += 3.0  # geo match in title floats to top but doesn't gate
+        if geo_in_title: score += 3.0
         out.append({
             "video_id": vid,
             "title": title,
@@ -710,6 +721,13 @@ def _yt_download_and_trim(
         if r.returncode != 0 or not full_path.exists():
             _cleanup_ytdlp_sidecars(full_path)
             return False
+            
+        # Minimum File Size Gate (500KB)
+        if full_path.stat().st_size < 500000:
+            print(f" (reject: corrupt/tiny download {full_path.stat().st_size/1024:.0f}KB)", end="", flush=True)
+            full_path.unlink(missing_ok=True)
+            _cleanup_ytdlp_sidecars(full_path)
+            return False
     except Exception:
         _cleanup_ytdlp_sidecars(full_path)
         return False
@@ -740,7 +758,7 @@ def _yt_download_and_trim(
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-ss", str(start), "-i", str(full_path),
         "-t", str(target), "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     full_path.unlink(missing_ok=True)
@@ -767,7 +785,7 @@ def _download_http_clip_and_trim(video_url: str, out_path: Path, duration_sec: f
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-ss", str(start), "-i", str(full_path),
         "-t", str(target), "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     full_path.unlink(missing_ok=True)
@@ -807,6 +825,50 @@ def _extract_middle_frame(video_path: Path) -> Optional[Path]:
         return frame_path
     frame_path.unlink(missing_ok=True)
     return None
+
+
+def _extract_multi_frames(video_path: Path, count: int = 3) -> List[Path]:
+    """Extract frames at 25%, 50%, 75% of the clip for multi-point validation."""
+    if not video_path.exists():
+        return []
+
+    tmp_dir = Path(tempfile.gettempdir()) / "broll_geo_frames"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    probe = subprocess.run(
+        [
+            "ffprobe", "-v", "error", "-show_entries", "format=duration",
+            "-of", "json", str(video_path),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        duration = float(json.loads(probe.stdout).get("format", {}).get("duration", 0) or 0)
+    except Exception:
+        duration = 0.0
+
+    if duration <= 0:
+        mid = _extract_middle_frame(video_path)
+        return [mid] if mid else []
+
+    positions = [0.25, 0.5, 0.75][:count]
+    frames: List[Path] = []
+    for i, frac in enumerate(positions):
+        ts = max(0.2, duration * frac)
+        fp = tmp_dir / f"{video_path.stem}_f{i}.jpg"
+        ok = run_ffmpeg(
+            [
+                "ffmpeg", "-y", "-ss", str(ts), "-i", str(video_path),
+                "-vframes", "1", "-q:v", "4", str(fp),
+            ],
+            timeout=30,
+        )
+        if ok and fp.exists() and fp.stat().st_size > 1024:
+            frames.append(fp)
+        else:
+            fp.unlink(missing_ok=True)
+    return frames
 
 
 def _has_news_ticker_band(frame_path: Path) -> bool:

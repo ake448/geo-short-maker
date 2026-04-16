@@ -22,7 +22,8 @@ from .config import (
 from .footage import (
     _yt_search_candidates, _yt_download_and_trim,
     _yt_query_for_beat, _extract_search_hint,
-    _extract_middle_frame, _has_news_ticker_band, _has_burned_captions,
+    _extract_middle_frame, _extract_multi_frames,
+    _has_news_ticker_band, _has_burned_captions,
     _clean_place_anchor, _join_query_parts, _scene_terms_for_beat,
     _extract_place_aliases, _subject_query_hint,
 )
@@ -301,36 +302,14 @@ def _query_variants_for_beat(
     return unique
 
 
-def _gemini_geo_match(frame_path: Path, required_geography: str, strictness: str, track: str,
-                      visual_description: str = "", broll_type: str = "") -> bool:
+def _gemini_geo_match_single(frame_path: Path, prompt: str) -> bool:
+    """Send a single frame to Gemini for geo validation. Returns True if acceptable."""
     if not GEMINI_API_KEY or not frame_path.exists():
         return True
-
     try:
         img_data = base64.b64encode(frame_path.read_bytes()).decode("utf-8")
     except Exception:
         return True
-
-    mode = "exact place" if strictness == "strict" else "regional look"
-    content_hint = ""
-    if visual_description:
-        content_hint = f" Expected content: {visual_description}."
-    if broll_type:
-        type_map = {
-            "real_city": "urban/city scenery — streets, skyline, buildings",
-            "real_geography": "natural landscape — terrain, aerial, drone, nature",
-            "real_people": "people in public — street life, markets, crowds",
-            "native_animal": "wildlife or animals in their natural habitat",
-        }
-        content_hint += f" Shot type required: {type_map.get(broll_type, broll_type)}."
-    prompt = (
-        "Decide if this video frame is acceptable for a geography documentary. "
-        "Return JSON only: {\"geo_match\": true|false, \"reason\": \"short\"}. "
-        f"Required geography: {required_geography}. Match mode: {mode}.{content_hint} "
-        "Reject if: wrong geography, TV news tickers/overlays, product shots, food/cooking, "
-        "indoor product reviews, unboxing, pets in domestic settings, or any content clearly "
-        "unrelated to the geography or shot type described."
-    )
     url = (
         f"https://generativelanguage.googleapis.com/v1beta/models/"
         f"{urllib.parse.quote(GEMINI_MODEL)}:generateContent"
@@ -357,12 +336,85 @@ def _gemini_geo_match(frame_path: Path, required_geography: str, strictness: str
         parts = raw.get("candidates", [{}])[0].get("content", {}).get("parts", [])
         text = "\n".join(p.get("text", "") for p in parts if p.get("text")).strip()
         parsed = json.loads(text) if text.startswith("{") else {}
-        ok = bool(parsed.get("geo_match"))
-        if not ok:
-            print(" [reject: geo-mismatch]", end="", flush=True)
-        return ok
+        return bool(parsed.get("geo_match"))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, json.JSONDecodeError, KeyError, ValueError):
         return True
+
+
+def _build_geo_prompt(required_geography: str, strictness: str, visual_description: str = "",
+                      broll_type: str = "", landmarks: str = "") -> str:
+    """Build a landmark-aware vision prompt for geo-matching."""
+    mode = "exact neighborhood/landmark" if strictness == "strict" else "correct region/area"
+    content_hint = ""
+    if visual_description:
+        content_hint = f" Expected content: {visual_description}."
+    if broll_type:
+        type_map = {
+            "real_city": "urban/city scenery — streets, skyline, buildings",
+            "real_geography": "natural landscape — terrain, aerial, drone, nature",
+            "real_people": "people in public — street life, markets, crowds",
+            "native_animal": "wildlife or animals in their natural habitat",
+        }
+        content_hint += f" Shot type required: {type_map.get(broll_type, broll_type)}."
+    landmark_hint = ""
+    if landmarks:
+        landmark_hint = (
+            f" Look for these specific visual markers: {landmarks}."
+            " If none of these landmarks/features are visible, that's a strong signal of wrong location."
+        )
+    return (
+        "You are verifying footage for a geography documentary. "
+        "Return JSON only: {\"geo_match\": true|false, \"confidence\": 0.0-1.0, \"reason\": \"short\"}. "
+        f"Required location: {required_geography}. Match requirement: {mode}.{content_hint}{landmark_hint} "
+        "REJECT if: clearly wrong city/region/country, wrong terrain type (beach when expecting urban, "
+        "desert when expecting forest), TV news tickers/overlays, product shots, food/cooking, "
+        "indoor scenes, unrelated content. "
+        "ACCEPT if: the scenery is plausibly from the required location based on architecture, "
+        "terrain, vegetation, landmarks, or signage visible in the frame."
+    )
+
+
+def _gemini_geo_match(frame_path: Path, required_geography: str, strictness: str, track: str,
+                      visual_description: str = "", broll_type: str = "",
+                      landmarks: str = "", all_frames: list = None) -> bool:
+    """Multi-frame geo validation. Checks up to 3 frames — rejects if majority fail."""
+    if not GEMINI_API_KEY:
+        return True
+
+    prompt = _build_geo_prompt(required_geography, strictness, visual_description, broll_type, landmarks)
+
+    # Multi-frame check: use all provided frames, fall back to single frame_path
+    frames_to_check = all_frames if all_frames else ([frame_path] if frame_path and frame_path.exists() else [])
+    if not frames_to_check:
+        return True
+
+    # For single frame, just check it directly
+    if len(frames_to_check) == 1:
+        ok = _gemini_geo_match_single(frames_to_check[0], prompt)
+        if not ok:
+            print(" [reject:geo-mismatch]", end="", flush=True)
+        return ok
+
+    # Multi-frame: require majority to pass (2 of 3)
+    passes = 0
+    fails = 0
+    for fp in frames_to_check[:3]:
+        if _gemini_geo_match_single(fp, prompt):
+            passes += 1
+        else:
+            fails += 1
+        # Early exit: if 2 pass or 2 fail, we know the result
+        if passes >= 2:
+            return True
+        if fails >= 2:
+            print(" [reject:geo-mismatch-multi]", end="", flush=True)
+            return False
+
+    # Shouldn't reach here, but accept if more passes than fails
+    ok = passes > fails
+    if not ok:
+        print(" [reject:geo-mismatch-multi]", end="", flush=True)
+    return ok
 
 
 def _accept_candidate_clip(
@@ -375,42 +427,59 @@ def _accept_candidate_clip(
     broll_type: str = "",
     geo_in_title: bool = False,
 ) -> bool:
-    frame_path = _extract_middle_frame(out_path)
+    # File-size filter: reject suspiciously small clips (broken downloads, thumbnails)
+    if out_path.exists() and out_path.stat().st_size < 512 * 1024:
+        print(" [reject:tiny-file]", end="", flush=True)
+        if diagnostics is not None:
+            _append_diag(diagnostics, "reject_reasons", "file_too_small")
+        _safe_unlink(out_path)
+        return False
+
+    # Extract multiple frames for validation (ticker/caption check uses first, geo uses all)
+    multi_frames = _extract_multi_frames(out_path, count=3)
+    frame_path = multi_frames[0] if multi_frames else _extract_middle_frame(out_path)
+
     if frame_path and _has_news_ticker_band(frame_path):
         print(" [reject:ticker]", end="", flush=True)
         if diagnostics is not None:
             _append_diag(diagnostics, "reject_reasons", "ticker")
-        _safe_unlink(frame_path)
+        for fp in multi_frames:
+            _safe_unlink(fp)
         _safe_unlink(out_path)
         return False
     if frame_path and _has_burned_captions(frame_path):
         print(" [reject:captions]", end="", flush=True)
         if diagnostics is not None:
             _append_diag(diagnostics, "reject_reasons", "burned_captions")
-        _safe_unlink(frame_path)
+        for fp in multi_frames:
+            _safe_unlink(fp)
         _safe_unlink(out_path)
         return False
 
     strictness = str(intent.get("geography_strictness") or "loose").lower()
     required_geo = str(intent.get("required_geography") or "")
     visual_description = str(intent.get("visual_description") or "")
-    # Don't force strict — respect what the script requested. Forcing strict caused
-    # Gemini to demand "exact place" match on every frame, rejecting most valid footage.
-    # If the video title already matched the geographic keyword, that's strong enough
-    # confirmation — skip Gemini vision check. Vision check rejects valid drone footage
-    # because suburban streets don't have "Jacksonville" written on them.
-    should_geo_check = ((not trusted_channel) or strictness == "strict") and not geo_in_title
-    if should_geo_check and frame_path:
-        if not _gemini_geo_match(frame_path, required_geo, strictness, track,
-                                  visual_description=visual_description, broll_type=broll_type):
+    landmarks = str(intent.get("landmarks") or "")
+    # geo_in_title gives a bonus during candidate scoring but does NOT skip vision check.
+    # A video titled "Orlando Beach Drone" should not auto-pass for an inland neighborhood beat.
+    # Trusted channels with loose strictness get a pass (they produce consistent geo content).
+    should_geo_check = not (trusted_channel and strictness != "strict")
+    if should_geo_check and (multi_frames or frame_path):
+        if not _gemini_geo_match(
+            frame_path, required_geo, strictness, track,
+            visual_description=visual_description, broll_type=broll_type,
+            landmarks=landmarks,
+            all_frames=multi_frames if len(multi_frames) >= 2 else None,
+        ):
             if diagnostics is not None:
                 _append_diag(diagnostics, "reject_reasons", "geo_mismatch")
-            _safe_unlink(frame_path)
+            for fp in multi_frames:
+                _safe_unlink(fp)
             _safe_unlink(out_path)
             return False
 
-    if frame_path:
-        _safe_unlink(frame_path)
+    for fp in multi_frames:
+        _safe_unlink(fp)
     return True
 
 

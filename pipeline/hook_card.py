@@ -146,7 +146,7 @@ def burn_hook_text(video_path: Path, output_path: Path, hook_text: str) -> bool:
         "-i", str(tmp_dir / "hook_%04d.png"),
         "-filter_complex",
         f"[1:v]format=rgba[hook];[0:v][hook]overlay=0:0:eof_action=pass:enable='lte(t,{HOOK_DURATION})'",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         "-r", str(FPS), "-an",
         str(output_path)
     ], timeout=120)

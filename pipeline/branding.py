@@ -134,7 +134,7 @@ def apply_branding(video_path: Path, output_path: Path) -> bool:
         "-i", str(video_path),
         "-i", str(overlay_path),
         "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         "-c:a", "copy",
         str(output_path)
     ], timeout=180)
