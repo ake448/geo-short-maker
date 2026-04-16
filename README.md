@@ -1,6 +1,14 @@
+
 # GeoShortMaker
 
 Automated pipeline that generates geography YouTube Shorts from a text prompt. Give it a topic like *"Nobody wants to live in this state"* and it produces a 45-60 second vertical video with narration, captions, b-roll footage, map visuals, and background music.
+
+
+
+https://github.com/user-attachments/assets/e6d60657-fa19-4c36-9acf-a03148fb985f
+
+
+
 
 ## Pipeline Stages
 
