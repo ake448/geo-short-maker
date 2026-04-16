@@ -249,7 +249,7 @@ def burn_title_overlay(video_path: Path, title_text: str, out_path: Path,
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-i", str(video_path),
         "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         "-r", str(FPS), "-an",
         str(out_path)
     ], timeout=180)

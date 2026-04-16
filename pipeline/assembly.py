@@ -93,7 +93,7 @@ def _apply_highlight_to_video(video_path: Path, beat: Dict, geo: Dict) -> bool:
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-i", str(video_path), "-i", str(overlay_path),
         "-filter_complex", "[0:v][1:v]overlay=0:0:format=auto",
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         "-r", str(FPS), "-an", str(highlighted_path)
     ], timeout=180)
     overlay_path.unlink(missing_ok=True)
@@ -345,7 +345,7 @@ def still_to_video(still_path: Path, video_path: Path, duration: float, seed: in
         return run_ffmpeg([
             "ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", str(still_path),
             "-vf", f"scale={OUT_W}:{OUT_H},format=yuv420p",
-            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "22",
             "-r", str(FPS), "-frames:v", str(total_n), str(video_path)], timeout=60)
 
     if mode == "zoom_center":
@@ -378,7 +378,7 @@ def still_to_video(still_path: Path, video_path: Path, duration: float, seed: in
 
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-loop", "1", "-framerate", str(FPS), "-i", str(prescale),
-        "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22",
+        "-vf", vf, "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-crf", "22",
         "-r", str(FPS), "-frames:v", str(total_n), str(video_path)], timeout=60)
     prescale.unlink(missing_ok=True)
     return ok
@@ -428,7 +428,7 @@ def assemble_final(script: Dict, assets: Dict[int, Path], run_dir: Path,
         if asset_path.suffix.lower() == ".mp4":
             ok = run_ffmpeg([
                 "ffmpeg", "-y", "-i", str(asset_path), "-t", str(dur),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
                 "-r", str(FPS), "-an", str(clip_path)
             ], timeout=120)
         else:
@@ -470,7 +470,7 @@ def assemble_final(script: Dict, assets: Dict[int, Path], run_dir: Path,
             "-filter_complex",
             f"[0:v][1:v]xfade=transition=fade:duration={FADE_DUR}:offset={{}}".format(
                 max(0.1, float(script['beats'][0].get('duration_sec', 4)) - FADE_DUR)),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
             "-r", str(FPS), "-an", str(final_out)], timeout=180)
     else:
         inputs = []
@@ -496,7 +496,7 @@ def assemble_final(script: Dict, assets: Dict[int, Path], run_dir: Path,
         ok = run_ffmpeg([
             "ffmpeg", "-y", *inputs,
             "-filter_complex", ";".join(filter_parts),
-            "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
             "-r", str(FPS), "-an", str(final_out)], timeout=300)
 
         # Fallback: pairwise xfade if full chain OOMs
@@ -513,7 +513,7 @@ def assemble_final(script: Dict, assets: Dict[int, Path], run_dir: Path,
                     "ffmpeg", "-y", "-i", str(current), "-i", str(ordered_clips[i]),
                     "-filter_complex",
                     f"[0:v][1:v]xfade=transition=fade:duration={FADE_DUR}:offset={pair_offset:.2f}",
-                    "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
                     "-r", str(FPS), "-an", str(pair_out)], timeout=120)
                 if ok2 and pair_out.exists():
                     current = pair_out
@@ -527,7 +527,7 @@ def assemble_final(script: Dict, assets: Dict[int, Path], run_dir: Path,
                     ok = run_ffmpeg([
                         "ffmpeg", "-y", "-f", "concat", "-safe", "0",
                         "-i", str(concat_list),
-                        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
                         "-r", str(FPS), "-an", str(final_out)], timeout=300)
                     break
             else:

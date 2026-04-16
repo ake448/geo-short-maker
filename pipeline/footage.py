@@ -563,7 +563,7 @@ def _yt_download_exact(
         "ffmpeg", "-y", "-i", str(full_path),
         "-t", str(max(5.0, min(8.0, float(duration_sec)))),
         "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     
@@ -758,7 +758,7 @@ def _yt_download_and_trim(
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-ss", str(start), "-i", str(full_path),
         "-t", str(target), "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     full_path.unlink(missing_ok=True)
@@ -785,7 +785,7 @@ def _download_http_clip_and_trim(video_url: str, out_path: Path, duration_sec: f
     ok = run_ffmpeg([
         "ffmpeg", "-y", "-ss", str(start), "-i", str(full_path),
         "-t", str(target), "-filter_complex", BLUR_BG_FILTER,
-        "-r", str(FPS), "-c:v", "libx264", "-preset", "fast", "-crf", "21", "-an",
+        "-r", str(FPS), "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "21", "-an",
         str(out_path)
     ], timeout=180)
     full_path.unlink(missing_ok=True)

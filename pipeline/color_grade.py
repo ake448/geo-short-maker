@@ -60,7 +60,7 @@ def grade_clip(input_path: Path, output_path: Path,
         "ffmpeg", "-y",
         "-i", str(input_path),
         "-vf", grade_filter,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "20",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "fast", "-crf", "20",
         "-r", str(FPS), "-an",
         str(output_path)
     ], timeout=120)
